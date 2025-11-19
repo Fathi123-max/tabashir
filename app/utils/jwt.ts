@@ -1,25 +1,81 @@
 import jwt from "jsonwebtoken";
 
-const ACCESS_TTL = "15m";
-const REFRESH_TTL = "30d";
-
-const ACCESS_SECRET  = process.env.JWT_ACCESS_SECRET!;
-const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET!;
-
-export type JwtPayload = { id: string; email: string; userType?: string };
-
-export function signAccessToken(payload: JwtPayload) {
-  return jwt.sign(payload, ACCESS_SECRET, { expiresIn: ACCESS_TTL });
+interface JWTPayload {
+  id: string;
+  email: string;
+  userType: string;
+  iat?: number;
+  exp?: number;
 }
 
-export function signRefreshToken(payload: JwtPayload) {
-  return jwt.sign(payload, REFRESH_SECRET, { expiresIn: REFRESH_TTL });
+/**
+ * Sign an access token
+ */
+export function signAccessToken(payload: Omit<JWTPayload, "iat" | "exp">) {
+  const secret = process.env.JWT_ACCESS_SECRET;
+  if (!secret) {
+    throw new Error("JWT_ACCESS_SECRET is not configured");
+  }
+
+  return jwt.sign(payload, secret, {
+    expiresIn: "15m", // 15 minutes
+  });
 }
 
-export function verifyAccess(token: string): JwtPayload {
-  return jwt.verify(token, ACCESS_SECRET) as JwtPayload;
+/**
+ * Sign a refresh token
+ */
+export function signRefreshToken(payload: Omit<JWTPayload, "iat" | "exp">) {
+  const secret = process.env.JWT_REFRESH_SECRET;
+  if (!secret) {
+    throw new Error("JWT_REFRESH_SECRET is not configured");
+  }
+
+  return jwt.sign(payload, secret, {
+    expiresIn: "7d", // 7 days
+  });
 }
 
-export function verifyRefresh(token: string): JwtPayload {
-  return jwt.verify(token, REFRESH_SECRET) as JwtPayload;
+/**
+ * Verify an access token
+ */
+export function verifyAccess(token: string): JWTPayload {
+  const secret = process.env.JWT_ACCESS_SECRET;
+  if (!secret) {
+    throw new Error("JWT_ACCESS_SECRET is not configured");
+  }
+
+  try {
+    const decoded = jwt.verify(token, secret) as JWTPayload;
+    return decoded;
+  } catch (error) {
+    throw new Error("Invalid or expired access token");
+  }
+}
+
+/**
+ * Verify a refresh token
+ */
+export function verifyRefresh(token: string): JWTPayload {
+  const secret = process.env.JWT_REFRESH_SECRET;
+  if (!secret) {
+    throw new Error("JWT_REFRESH_SECRET is not configured");
+  }
+
+  try {
+    const decoded = jwt.verify(token, secret) as JWTPayload;
+    return decoded;
+  } catch (error) {
+    throw new Error("Invalid or expired refresh token");
+  }
+}
+
+/**
+ * Extract token from Authorization header
+ */
+export function extractTokenFromHeader(authHeader: string | null): string | null {
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return null;
+  }
+  return authHeader.replace("Bearer ", "");
 }
