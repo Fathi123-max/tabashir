@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAccess } from "@/app/utils/jwt";
 import { prisma } from "@/lib/prisma";
-import { UTApi } from "uploadthing/server";
-
-const utapi = new UTApi();
+import { uploadFile, generateFilename } from "@/lib/uploadthing-service";
 
 /**
  * GET /api/mobile/resumes
@@ -91,62 +89,54 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const file = formData.get("file") as File;
 
-    if (!file) {
+    // Extract original filename and extension
+    const originalFileName = (file as any).name || 'resume.pdf';
+    const fileExtension = originalFileName.split('.').pop() || 'pdf';
+    const sanitizedOriginalName = originalFileName.replace(/\.[^/.]+$/, ""); // Remove extension
+    const sanitizedName = sanitizedOriginalName.replace(/[^a-zA-Z0-9_-]/g, "_"); // Sanitize filename
+
+    // Generate unique filename preserving original name
+    const fileName = generateFilename(`${sanitizedName}_${candidate.id}`, fileExtension);
+
+    try {
+      // Upload file to UploadThing
+      const uploadResult = await uploadFile(file, {
+        allowedTypes: ["application/pdf"],
+        maxSizeInMB: 2,
+        filename: fileName,
+      });
+
+      const originalUrl = uploadResult.data.url;
+
+      // Create resume record in database
+      const resume = await prisma.resume.create({
+        data: {
+          candidateId: candidate.id,
+          filename: fileName,
+          originalUrl: originalUrl,
+        },
+        select: {
+          id: true,
+          filename: true,
+          originalUrl: true,
+          formatedUrl: true,
+          isAiResume: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        resume,
+      });
+    } catch (error) {
+      console.error("[UPLOAD_RESUME_ERROR]", error);
       return NextResponse.json(
-        { error: "No file provided" },
-        { status: 400 }
-      );
-    }
-
-    // Validate file type
-    if (file.type !== "application/pdf") {
-      return NextResponse.json(
-        { error: "Only PDF files are allowed" },
-        { status: 400 }
-      );
-    }
-
-    // Generate unique filename
-    const fileName = `resume_${candidate.id}_${Date.now()}.pdf`;
-
-    // Upload file to UploadThing using the correct API format
-    const uploadResult = await utapi.uploadFiles([file]);
-    const uploadedFile = uploadResult[0];
-
-    // Check if upload was successful
-    if (!uploadedFile || !uploadedFile.data?.ufsUrl) {
-      console.error("[UPLOAD_RESUME_ERROR]", "UploadThing upload failed", uploadResult);
-      return NextResponse.json(
-        { error: "Failed to upload file to storage" },
+        { error: error instanceof Error ? error.message : "Failed to upload resume" },
         { status: 500 }
       );
     }
-
-    // Extract the URL from UploadThing response
-    const originalUrl = uploadedFile.data.ufsUrl;
-
-    // Create resume record in database
-    const resume = await prisma.resume.create({
-      data: {
-        candidateId: candidate.id,
-        filename: fileName,
-        originalUrl: originalUrl,
-      },
-      select: {
-        id: true,
-        filename: true,
-        originalUrl: true,
-        formatedUrl: true,
-        isAiResume: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    return NextResponse.json({
-      success: true,
-      resume,
-    });
   } catch (error) {
     console.error("[UPLOAD_RESUME_ERROR]", error);
     return NextResponse.json(

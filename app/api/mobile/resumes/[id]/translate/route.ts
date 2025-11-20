@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateCandidateRequest } from "@/lib/mobile-auth";
 import { prisma } from "@/lib/prisma";
+import { downloadFile } from "@/lib/uploadthing-service";
 
 /**
  * POST /api/mobile/resumes/{id}/translate
@@ -82,16 +83,20 @@ export async function POST(
     }
 
     // Download the resume file from UploadThing
-    const fileResponse = await fetch(resume.originalUrl);
-    if (!fileResponse.ok) {
+    const downloadResult = await downloadFile(resume.originalUrl);
+
+    if (!downloadResult.success || !downloadResult.blob) {
       return NextResponse.json(
-        { error: "Failed to download resume file" },
+        { error: downloadResult.error || "Failed to download resume file" },
         { status: 500 }
       );
     }
 
-    const fileBlob = await fileResponse.blob();
-    const file = new File([fileBlob], resume.filename, { type: "application/pdf" });
+    const file = new File(
+      [downloadResult.blob],
+      resume.filename,
+      { type: "application/pdf" }
+    );
 
     // Prepare form data for Resume Backend
     const formData = new FormData();

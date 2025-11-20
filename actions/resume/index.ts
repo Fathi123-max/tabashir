@@ -2,7 +2,7 @@
 
 import { auth } from "@/app/utils/auth"
 import { prisma } from "@/app/utils/db"
-import { UTApi } from "uploadthing/server";
+import { uploadFile, deleteFile, downloadFile, generateFilename } from "@/lib/uploadthing-service";
 import OpenAI from "openai";
 import { extractText, getDocumentProxy } from 'unpdf';
 import { revalidatePath } from "next/cache";
@@ -27,8 +27,6 @@ interface ResumeUploadData {
   formatedContent?: string
 }
 
-const utapi = new UTApi();
-
 export async function onUploadResume(file: File): Promise<{ error: boolean; message: string; originalFile?: { filename: string; originalUrl: string; id: string }; newResume?: Resume }> {
   if (!file || file.type !== "application/pdf") {
     return {
@@ -38,19 +36,19 @@ export async function onUploadResume(file: File): Promise<{ error: boolean; mess
   }
 
   try {
-    const uploadedFiles = await utapi.uploadFiles([file]);
-    const uploadedFile = uploadedFiles[0];
+    // Generate unique filename
+    const fileName = generateFilename("resume", "pdf");
 
-    if (!uploadedFile || !uploadedFile.data?.ufsUrl) {
-      return {
-        error: true,
-        message: "Failed to upload file to UploadThing",
-      };
-    }
+    // Upload file to UploadThing
+    const uploadResult = await uploadFile(file, {
+      allowedTypes: ["application/pdf"],
+      maxSizeInMB: 2,
+      filename: fileName,
+    });
 
     const originalFileDetails = {
-      filename: uploadedFile.data.name,
-      originalUrl: uploadedFile.data.ufsUrl,
+      filename: uploadResult.data.name || fileName,
+      originalUrl: uploadResult.data.url,
     };
 
     // Save the initial upload without AI processing
@@ -60,8 +58,8 @@ export async function onUploadResume(file: File): Promise<{ error: boolean; mess
     });
 
     if (saveResult.error || !saveResult.data) {
-      return { 
-        error: true, 
+      return {
+        error: true,
         message: saveResult.message || "Failed to save resume data",
         originalFile: {
           ...originalFileDetails,
@@ -248,9 +246,18 @@ export async function processResumeWithAIAfterUpload(resumeId: string): Promise<
       };
     }
 
-    // Fetch the PDF content from the URL
-    const response = await fetch(resume.originalUrl);
-    const arrayBuffer = await response.arrayBuffer();
+    // Download the file from UploadThing
+    const downloadResult = await downloadFile(resume.originalUrl);
+
+    if (!downloadResult.success || !downloadResult.blob) {
+      return {
+        error: true,
+        message: downloadResult.error || "Failed to download resume file",
+      };
+    }
+
+    // Convert blob to buffer for unpdf
+    const arrayBuffer = await downloadResult.blob.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
     // Extract text from the PDF using unpdf
@@ -386,23 +393,18 @@ export async function deleteResume(resumeId: string) {
 
     // Delete the file from UploadThing
     try {
-        // The URL is like https://utfs.io/f/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-        // We need to extract the file key, which is the part after /f/
-        const urlParts = resume.originalUrl.split('/f/');
-        if (urlParts.length > 1) {
-            const fileKey = urlParts[1];
-            await utapi.deleteFiles(fileKey);
-            console.log(`Deleted file ${fileKey} from UploadThing for resume ${resumeId}`);
-        } else {
-            console.warn(`Could not extract file key from URL: ${resume.originalUrl}`);
-            // Optionally return an error here if file URL format is unexpected
-        }
+      const deleteResult = await deleteFile(resume.originalUrl);
+      if (deleteResult.success) {
+        console.log(`Deleted file from UploadThing for resume ${resumeId}`);
+      } else {
+        console.warn(`Failed to delete file from UploadThing for resume ${resumeId}`);
+      }
     } catch (uploadthingError) {
-        console.error("[UPLOADTHING_DELETE_ERROR]", uploadthingError);
-        // Decide how to handle failure to delete from UploadThing.
-        // For now, we'll log the error but still delete the database record
-        // to prevent orphaned records if UploadThing deletion fails.
-        // Depending on requirements, you might return an error here instead.
+      console.error("[UPLOADTHING_DELETE_ERROR]", uploadthingError);
+      // Decide how to handle failure to delete from UploadThing.
+      // For now, we'll log the error but still delete the database record
+      // to prevent orphaned records if UploadThing deletion fails.
+      // Depending on requirements, you might return an error here instead.
     }
 
     // Delete the resume record from the database
@@ -512,23 +514,22 @@ export async function uploadAIResume(file: File, resumeId: string) {
       }
     }
 
-    const utapi = new UTApi();
-    const uploadedFiles = await utapi.uploadFiles([file]);
-    const uploadedFile = uploadedFiles[0];
+    // Generate filename
+    const fileName = generateFilename("ai-resume", "pdf");
 
-    if (!uploadedFile || !uploadedFile.data?.ufsUrl) {
-      return {
-        error: true,
-        message: "Failed to upload file to UploadThing",
-      }
-    }
+    // Upload file to UploadThing
+    const uploadResult = await uploadFile(file, {
+      allowedTypes: ["application/pdf"],
+      maxSizeInMB: 2,
+      filename: fileName,
+    });
 
     // Update the resume record with the formatted URL
     const updateResult = await prisma.aiResume.update({
       where: { id: resumeId },
       data: {
-        formatedUrl: uploadedFile.data.ufsUrl,
-        originalUrl: uploadedFile.data.ufsUrl,
+        formatedUrl: uploadResult.data.url,
+        originalUrl: uploadResult.data.url,
         progress: 100 // Mark as complete
       },
     });
@@ -543,9 +544,9 @@ export async function uploadAIResume(file: File, resumeId: string) {
     const aiResume = await prisma.resume.create({
       data: {
         candidateId: candidate.id,
-        formatedUrl: uploadedFile.data.ufsUrl,
-        originalUrl: uploadedFile.data.ufsUrl,
-        filename: aiResumePersonalDetails?.fullName || file.name,
+        formatedUrl: uploadResult.data.url,
+        originalUrl: uploadResult.data.url,
+        filename: aiResumePersonalDetails?.fullName || fileName,
       },
     })
 
@@ -554,7 +555,7 @@ export async function uploadAIResume(file: File, resumeId: string) {
       message: "AI resume uploaded successfully",
       data: aiResume,
     }
-    
+
   } catch (error) {
     console.error("[UPLOAD_AI_RESUME_ERROR]", error)
     return {

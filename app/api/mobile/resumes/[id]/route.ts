@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAccess } from "@/app/utils/jwt";
 import { prisma } from "@/lib/prisma";
-import { UTApi } from "uploadthing/server";
-
-const utapi = new UTApi();
+import { uploadFile, deleteFile, replaceFile, generateFilename } from "@/lib/uploadthing-service";
 
 /**
  * GET /api/mobile/resumes/{id}
@@ -126,69 +124,55 @@ export async function PUT(
     const formData = await req.formData();
     const file = formData.get("file") as File;
 
-    if (!file) {
-      return NextResponse.json(
-        { error: "No file provided" },
-        { status: 400 }
-      );
-    }
+    // Extract original filename and extension
+    const originalFileName = (file as any).name || 'resume.pdf';
+    const fileExtension = originalFileName.split('.').pop() || 'pdf';
+    const sanitizedOriginalName = originalFileName.replace(/\.[^/.]+$/, ""); // Remove extension
+    const sanitizedName = sanitizedOriginalName.replace(/[^a-zA-Z0-9_-]/g, "_"); // Sanitize filename
 
-    // Validate file type
-    if (file.type !== "application/pdf") {
-      return NextResponse.json(
-        { error: "Only PDF files are allowed" },
-        { status: 400 }
-      );
-    }
+    // Generate new filename preserving original name
+    const fileName = generateFilename(`${sanitizedName}_${candidate.id}`, fileExtension);
 
-    // Delete old file from UploadThing
     try {
-      const urlParts = existingResume.originalUrl.split("/f/");
-      if (urlParts.length > 1) {
-        const fileKey = urlParts[1];
-        await utapi.deleteFiles(fileKey);
-      }
-    } catch (deleteError) {
-      console.error("[UPLOADTHING_DELETE_ERROR]", deleteError);
-      // Continue even if delete fails
-    }
+      // Replace old file with new file
+      const uploadResult = await replaceFile(existingResume.originalUrl, file, {
+        allowedTypes: ["application/pdf"],
+        maxSizeInMB: 2,
+        filename: fileName,
+      });
 
-    // Upload new file to UploadThing
-    const uploadedFiles = await utapi.uploadFiles([file]);
-    const uploadedFile = uploadedFiles[0];
+      // Update resume record in database
+      const updatedResume = await prisma.resume.update({
+        where: { id: params.id },
+        data: {
+          filename: uploadResult.data.name || fileName,
+          originalUrl: uploadResult.data.url,
+          formatedUrl: null, // Reset formatted version
+          formatedContent: null, // Reset formatted content
+          updatedAt: new Date(),
+        },
+        select: {
+          id: true,
+          filename: true,
+          originalUrl: true,
+          formatedUrl: true,
+          isAiResume: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
 
-    if (!uploadedFile || !uploadedFile.data?.url) {
+      return NextResponse.json({
+        success: true,
+        resume: updatedResume,
+      });
+    } catch (error) {
+      console.error("[UPDATE_RESUME_ERROR]", error);
       return NextResponse.json(
-        { error: "Failed to upload file" },
+        { error: error instanceof Error ? error.message : "Failed to update resume" },
         { status: 500 }
       );
     }
-
-    // Update resume record in database
-    const updatedResume = await prisma.resume.update({
-      where: { id: params.id },
-      data: {
-        filename: uploadedFile.data.name,
-        originalUrl: uploadedFile.data.url,
-        formatedUrl: null, // Reset formatted version
-        formatedContent: null, // Reset formatted content
-        updatedAt: new Date(),
-      },
-      select: {
-        id: true,
-        filename: true,
-        originalUrl: true,
-        formatedUrl: true,
-        isAiResume: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    return NextResponse.json({
-      success: true,
-      resume: updatedResume,
-    });
   } catch (error) {
     console.error("[UPDATE_RESUME_ERROR]", error);
     return NextResponse.json(
@@ -249,11 +233,7 @@ export async function DELETE(
 
     // Delete file from UploadThing
     try {
-      const urlParts = resume.originalUrl.split("/f/");
-      if (urlParts.length > 1) {
-        const fileKey = urlParts[1];
-        await utapi.deleteFiles(fileKey);
-      }
+      await deleteFile(resume.originalUrl);
     } catch (deleteError) {
       console.error("[UPLOADTHING_DELETE_ERROR]", deleteError);
       // Continue even if delete fails
