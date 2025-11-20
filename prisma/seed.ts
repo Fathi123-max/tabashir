@@ -175,6 +175,20 @@ async function main() {
   const candidates = []
   const candidateData = [
     {
+      name: 'Profile Test User',
+      email: 'profiletest@tabashir.com',
+      phone: '+971501234567',
+      nationality: 'UAE',
+      gender: 'Male',
+      age: 27,
+      jobType: 'Full-time',
+      skills: ['JavaScript', 'React', 'Node.js', 'TypeScript', 'Next.js'],
+      experience: '4 years',
+      education: 'Bachelor of Computer Science',
+      degree: 'BSc Computer Science',
+      languages: ['English', 'Arabic']
+    },
+    {
       name: 'Ali Mohamed',
       email: 'ali@example.com',
       phone: '+971501234568',

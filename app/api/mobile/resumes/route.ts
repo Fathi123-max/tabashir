@@ -109,16 +109,28 @@ export async function POST(req: NextRequest) {
     // Generate unique filename
     const fileName = `resume_${candidate.id}_${Date.now()}.pdf`;
 
-    // For development: use mock upload (in production, use UploadThing)
-    // TODO: Replace with UploadThing when credentials are available
-    const mockUrl = `https://example.com/uploads/${fileName}`;
+    // Upload file to UploadThing using the correct API format
+    const uploadResult = await utapi.uploadFiles([file]);
+    const uploadedFile = uploadResult[0];
+
+    // Check if upload was successful
+    if (!uploadedFile || !uploadedFile.data?.ufsUrl) {
+      console.error("[UPLOAD_RESUME_ERROR]", "UploadThing upload failed", uploadResult);
+      return NextResponse.json(
+        { error: "Failed to upload file to storage" },
+        { status: 500 }
+      );
+    }
+
+    // Extract the URL from UploadThing response
+    const originalUrl = uploadedFile.data.ufsUrl;
 
     // Create resume record in database
     const resume = await prisma.resume.create({
       data: {
         candidateId: candidate.id,
         filename: fileName,
-        originalUrl: mockUrl,
+        originalUrl: originalUrl,
       },
       select: {
         id: true,
