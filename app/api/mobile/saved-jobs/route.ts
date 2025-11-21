@@ -20,7 +20,11 @@ export async function GET(req: NextRequest) {
     const savedJobs = await prisma.savedJobPost.findMany({
       where: { userId },
       select: {
-        jobId: true,
+        job: {
+          select: {
+            externalApiJobId: true,
+          },
+        },
         createdAt: true,
       },
       orderBy: {
@@ -28,8 +32,10 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Extract just the job IDs for easier consumption
-    const savedJobIds = savedJobs.map(savedJob => savedJob.jobId);
+    // Extract just the external API job IDs for easier consumption
+    const savedJobIds = savedJobs
+      .map(savedJob => savedJob.job.externalApiJobId)
+      .filter(id => id !== null) as string[];
 
     return NextResponse.json({
       success: true,
@@ -71,10 +77,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verify the job exists
+    // Verify the job exists by externalApiJobId
     const job = await prisma.job.findUnique({
-      where: { id: jobId },
-      select: { id: true, title: true },
+      where: { externalApiJobId: jobId },
+      select: { id: true, title: true, externalApiJobId: true },
     });
 
     if (!job) {
@@ -89,7 +95,7 @@ export async function POST(req: NextRequest) {
       where: {
         userId_jobId: {
           userId,
-          jobId,
+          jobId: job.id,
         },
       },
     });
@@ -101,21 +107,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Save the job
+    // Save the job using Job.id (cuid) but return externalApiJobId
     const savedJob = await prisma.savedJobPost.create({
       data: {
         userId,
-        jobId,
+        jobId: job.id,
       },
       select: {
-        jobId: true,
+        job: {
+          select: {
+            externalApiJobId: true,
+          },
+        },
         createdAt: true,
       },
     });
 
     return NextResponse.json({
       success: true,
-      savedJob,
+      savedJob: {
+        jobId: savedJob.job.externalApiJobId,
+        createdAt: savedJob.createdAt,
+      },
       message: "Job saved successfully",
     });
   } catch (error) {

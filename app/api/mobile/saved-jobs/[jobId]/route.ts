@@ -28,12 +28,25 @@ export async function DELETE(
       );
     }
 
+    // Find the job by externalApiJobId
+    const job = await prisma.job.findUnique({
+      where: { externalApiJobId: jobId },
+      select: { id: true },
+    });
+
+    if (!job) {
+      return NextResponse.json(
+        { error: "Job not found" },
+        { status: 404 }
+      );
+    }
+
     // Check if the saved job exists
     const savedJob = await prisma.savedJobPost.findUnique({
       where: {
         userId_jobId: {
           userId,
-          jobId,
+          jobId: job.id,
         },
       },
       select: {
@@ -53,7 +66,7 @@ export async function DELETE(
       where: {
         userId_jobId: {
           userId,
-          jobId,
+          jobId: job.id,
         },
       },
     });
