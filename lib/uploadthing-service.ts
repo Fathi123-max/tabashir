@@ -82,46 +82,81 @@ export async function uploadFile(
     allowedTypes?: string[];
     maxSizeInMB?: number;
     filename?: string;
+    maxRetries?: number;
   } = {}
 ) {
   const {
     allowedTypes = ["application/pdf"],
     maxSizeInMB = 2,
     filename,
+    maxRetries = 3,
   } = options;
 
-  try {
-    // Validate file
-    validateFileType(file, allowedTypes);
-    validateFileSize(file, maxSizeInMB);
+  // Validate file
+  validateFileType(file, allowedTypes);
+  validateFileSize(file, maxSizeInMB);
 
-    // Prepare file with custom filename if provided
-    const fileToUpload = filename
-      ? new File([file], filename, { type: file.type })
-      : file;
+  // Prepare file with custom filename if provided
+  const fileToUpload = filename
+    ? new File([file], filename, { type: file.type })
+    : file;
 
-    // Upload to UploadThing
-    const uploadResult = await utapi.uploadFiles([fileToUpload]);
-    const uploadedFile = uploadResult[0];
+  let lastError: unknown = null;
 
-    // Validate upload result
-    if (!uploadedFile || !uploadedFile.data) {
-      console.error("[UPLOADTHING_UPLOAD_ERROR]", "Upload failed", uploadResult);
-      throw new Error("Failed to upload file to storage");
+  // Implement retry logic with exponential backoff
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Add a small delay before retry (exponential backoff)
+      if (attempt > 0) {
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000)); // 1s, 2s, 4s...
+      }
+
+      // Upload to UploadThing
+      const uploadResult = await utapi.uploadFiles([fileToUpload]);
+      const uploadedFile = uploadResult[0];
+
+      // Validate upload result
+      if (!uploadedFile || !uploadedFile.data) {
+        const error = new Error("Upload response is missing data");
+        console.error("[UPLOADTHING_UPLOAD_ERROR]", "Upload failed", uploadResult, error);
+        throw error;
+      }
+
+      return {
+        success: true,
+        data: {
+          url: uploadedFile.data.url || uploadedFile.data.ufsUrl,
+          name: uploadedFile.data.name,
+          key: uploadedFile.data.key,
+        },
+      };
+    } catch (error) {
+      lastError = error;
+      console.error(`[UPLOADTHING_UPLOAD_ERROR] Attempt ${attempt + 1} failed:`, error);
+
+      // If this is the last attempt, break the loop and throw the error
+      if (attempt === maxRetries - 1) {
+        break;
+      }
+
+      // For specific network errors, continue to retry
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (!(
+        errorMessage.toLowerCase().includes("timeout") ||
+        errorMessage.toLowerCase().includes("network") ||
+        errorMessage.toLowerCase().includes("connect") ||
+        errorMessage.toLowerCase().includes("fetch failed") ||
+        errorMessage.toLowerCase().includes("und_err_connect_timeout")
+      )) {
+        // If it's not a network-related error, don't retry
+        break;
+      }
     }
-
-    return {
-      success: true,
-      data: {
-        url: uploadedFile.data.url || uploadedFile.data.ufsUrl,
-        name: uploadedFile.data.name,
-        key: uploadedFile.data.key,
-      },
-    };
-  } catch (error) {
-    console.error("[UPLOADTHING_UPLOAD_ERROR]", error);
-    throw error;
   }
+
+  // If all attempts failed, throw the last error
+  console.error("[UPLOADTHING_UPLOAD_ERROR]", "All upload attempts failed", lastError);
+  throw lastError || new Error("Upload failed after all retry attempts");
 }
 
 /**

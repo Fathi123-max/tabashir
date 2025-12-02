@@ -18,16 +18,19 @@ export async function GET(req: NextRequest) {
     const { id: userId } = verifyAccess(token);
 
     // Get candidate ID from user ID
-    const candidate = await prisma.candidate.findUnique({
+    let candidate = await prisma.candidate.findUnique({
       where: { userId },
       select: { id: true },
     });
 
+    // If candidate profile doesn't exist, create one
     if (!candidate) {
-      return NextResponse.json(
-        { error: "Candidate profile not found" },
-        { status: 404 }
-      );
+      candidate = await prisma.candidate.create({
+        data: {
+          userId: userId,
+        },
+        select: { id: true },
+      });
     }
 
     // Get all resumes for the candidate
@@ -73,16 +76,19 @@ export async function POST(req: NextRequest) {
     const { id: userId } = verifyAccess(token);
 
     // Get candidate ID from user ID
-    const candidate = await prisma.candidate.findUnique({
+    let candidate = await prisma.candidate.findUnique({
       where: { userId },
       select: { id: true },
     });
 
+    // If candidate profile doesn't exist, create one
     if (!candidate) {
-      return NextResponse.json(
-        { error: "Candidate profile not found" },
-        { status: 404 }
-      );
+      candidate = await prisma.candidate.create({
+        data: {
+          userId: userId,
+        },
+        select: { id: true },
+      });
     }
 
     // Parse multipart form data
@@ -98,49 +104,61 @@ export async function POST(req: NextRequest) {
     // Generate unique filename preserving original name
     const fileName = generateFilename(`${sanitizedName}_${candidate.id}`, fileExtension);
 
-    try {
-      // Upload file to UploadThing
-      const uploadResult = await uploadFile(file, {
-        allowedTypes: ["application/pdf"],
-        maxSizeInMB: 2,
+    // Upload file to UploadThing
+    const uploadResult = await uploadFile(file, {
+      allowedTypes: ["application/pdf"],
+      maxSizeInMB: 2,
+      filename: fileName,
+      maxRetries: 5, // Increased retries for better resilience
+    });
+
+    const originalUrl = uploadResult.data.url;
+
+    // Create resume record in database
+    const resume = await prisma.resume.create({
+      data: {
+        candidateId: candidate.id,
         filename: fileName,
-      });
+        originalUrl: originalUrl,
+      },
+      select: {
+        id: true,
+        filename: true,
+        originalUrl: true,
+        formatedUrl: true,
+        isAiResume: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
-      const originalUrl = uploadResult.data.url;
-
-      // Create resume record in database
-      const resume = await prisma.resume.create({
-        data: {
-          candidateId: candidate.id,
-          filename: fileName,
-          originalUrl: originalUrl,
-        },
-        select: {
-          id: true,
-          filename: true,
-          originalUrl: true,
-          formatedUrl: true,
-          isAiResume: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      });
-
-      return NextResponse.json({
-        success: true,
-        resume,
-      });
-    } catch (error) {
-      console.error("[UPLOAD_RESUME_ERROR]", error);
-      return NextResponse.json(
-        { error: error instanceof Error ? error.message : "Failed to upload resume" },
-        { status: 500 }
-      );
-    }
+    return NextResponse.json({
+      success: true,
+      resume,
+    });
   } catch (error) {
     console.error("[UPLOAD_RESUME_ERROR]", error);
+    let errorMessage = "Failed to upload resume";
+    let errorDetail = "";
+
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      // Extract specific error information for certain error types
+      if (error.message.toLowerCase().includes("timeout")) {
+        errorDetail = "Upload timed out. Please try again or use a smaller file.";
+      } else if (error.message.toLowerCase().includes("network")) {
+        errorDetail = "Network error during upload. Please check your connection and try again.";
+      } else if (error.message.toLowerCase().includes("und_err_connect_timeout")) {
+        errorDetail = "Connection timed out during upload. The server may be experiencing high load. Please try again.";
+      }
+    }
+
     return NextResponse.json(
-      { error: "Failed to upload resume" },
+      {
+        error: errorMessage,
+        detail: errorDetail,
+        timestamp: new Date().toISOString()
+      },
       { status: 500 }
     );
   }

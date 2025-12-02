@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/utils/db";
 import { hash } from "bcryptjs";
+import { signAccessToken, signRefreshToken } from "@/app/utils/jwt";
 
 export async function POST(req: Request) {
   try {
@@ -20,7 +21,16 @@ export async function POST(req: Request) {
       select: { id: true, name: true, email: true, userType: true },
     });
 
-    return NextResponse.json({ user }, { status: 201 });
+    // Generate tokens for the newly registered user
+    const payload = { id: user.id, email: user.email, userType: user.userType ?? undefined };
+    const accessToken = signAccessToken(payload);
+    const refreshToken = signRefreshToken(payload);
+
+    return NextResponse.json({
+      user,
+      accessToken,
+      refreshToken,
+    }, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
