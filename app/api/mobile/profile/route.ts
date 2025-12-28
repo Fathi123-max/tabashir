@@ -51,13 +51,15 @@ export async function PUT(req: Request) {
 
     console.log('[PROFILE_UPDATE] User type:', user.userType);
 
-    // Update User table
+    // Update User table (only update name, keep existing email if new email is empty)
+    const userUpdateData: any = { name };
+    if (email && email.trim().length > 0) {
+      userUpdateData.email = email;
+    }
+
     await prisma.user.update({
       where: { id },
-      data: {
-        name,
-        email,
-      },
+      data: userUpdateData,
     });
 
     // Update profile based on user type
@@ -79,8 +81,8 @@ export async function PUT(req: Request) {
         gender,
         experience: jobTitle, // Map jobTitle to experience
         education,
-        // Note: location and linkedin are not in the current schema
-        // These could be added as custom fields or stored elsewhere
+        location,
+        linkedin,
       };
 
       if (user.candidate?.profile) {

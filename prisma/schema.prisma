@@ -135,6 +135,8 @@ model CandidateProfile {
     experience          String?
     education           String?
     degree              String?
+    location            String?
+    linkedin            String?
     onboardingCompleted Boolean   @default(false)
     createdAt           DateTime  @default(now())
     updatedAt           DateTime  @updatedAt
