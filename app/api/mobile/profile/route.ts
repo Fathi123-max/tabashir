@@ -54,6 +54,19 @@ export async function PUT(req: Request) {
     // Update User table (only update name, keep existing email if new email is empty)
     const userUpdateData: any = { name };
     if (email && email.trim().length > 0) {
+      // Check if email is being changed and if the new email already exists
+      if (user.email !== email) {
+        const existingUser = await prisma.user.findUnique({
+          where: { email },
+        });
+
+        if (existingUser && existingUser.id !== id) {
+          return NextResponse.json(
+            { error: 'Email already in use by another account' },
+            { status: 400 }
+          );
+        }
+      }
       userUpdateData.email = email;
     }
 
