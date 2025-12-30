@@ -195,10 +195,24 @@ export async function GET(req: Request) {
       prisma.savedJobPost.count({ where: { userId: id } }),
     ]);
 
+    // Get application status breakdown
+    const [inReviewCount, interviewCount, offerCount, rejectedCount] = await Promise.all([
+      prisma.jobApplication.count({ where: { userId: id, status: 'IN_REVIEW' } }),
+      prisma.jobApplication.count({ where: { userId: id, status: 'INTERVIEW' } }),
+      prisma.jobApplication.count({ where: { userId: id, status: 'OFFER' } }),
+      prisma.jobApplication.count({ where: { userId: id, status: 'REJECTED' } }),
+    ]);
+
     const counts = {
       totalResumes: resumesCount,
       totalApplications: applicationsCount,
       savedJobs: savedJobsCount,
+      applicationsByStatus: {
+        inReview: inReviewCount,
+        interview: interviewCount,
+        offer: offerCount,
+        rejected: rejectedCount,
+      },
     };
 
     // Prepare enhanced response
