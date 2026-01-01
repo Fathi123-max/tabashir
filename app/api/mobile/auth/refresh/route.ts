@@ -14,7 +14,13 @@ export async function POST(req: Request) {
     try {
       const payload = verifyRefresh(refreshToken);
       console.log('[REFRESH] Token verified successfully for user:', payload.email);
-      const accessToken = signAccessToken(payload);
+
+      // Remove iat and exp fields from payload before signing new token
+      // jwt.verify() returns the decoded payload which includes exp/iat
+      // But signAccessToken expects a payload without exp/iat
+      const { iat, exp, ...cleanPayload } = payload;
+
+      const accessToken = signAccessToken(cleanPayload);
       console.log('[REFRESH] New access token generated successfully');
       return NextResponse.json({ accessToken });
     } catch (jwtError) {

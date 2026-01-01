@@ -36,7 +36,7 @@ export async function GET(
     // Get the resume and verify ownership
     const resume = await prisma.resume.findFirst({
       where: {
-        id: params.id,
+        id: (await params).id,
         candidateId: candidate.id,
       },
       select: {
@@ -104,7 +104,7 @@ export async function PUT(
     // Verify the resume exists and belongs to the candidate
     const existingResume = await prisma.resume.findFirst({
       where: {
-        id: params.id,
+        id: (await params).id,
         candidateId: candidate.id,
       },
       select: {
@@ -143,7 +143,7 @@ export async function PUT(
 
       // Update resume record in database
       const updatedResume = await prisma.resume.update({
-        where: { id: params.id },
+        where: { id: (await params).id },
         data: {
           filename: uploadResult.data.name || fileName,
           originalUrl: uploadResult.data.url,
@@ -215,7 +215,7 @@ export async function DELETE(
     // Verify the resume exists and belongs to the candidate
     const resume = await prisma.resume.findFirst({
       where: {
-        id: params.id,
+        id: (await params).id,
         candidateId: candidate.id,
       },
       select: {
@@ -241,7 +241,7 @@ export async function DELETE(
 
     // Delete resume record from database
     await prisma.resume.delete({
-      where: { id: params.id },
+      where: { id: (await params).id },
     });
 
     return NextResponse.json({
