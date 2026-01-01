@@ -28,6 +28,10 @@ export async function POST(req: Request) {
     const accessToken  = signAccessToken(payload);
     const refreshToken = signRefreshToken(payload);
 
+    console.log('[LOGIN] Generated tokens for user:', user.email);
+    console.log('[LOGIN] Access token length:', accessToken.length);
+    console.log('[LOGIN] Refresh token length:', refreshToken.length);
+
     return NextResponse.json({
       user: { id: user.id, name: user.name, email: user.email, userType: user.userType },
       accessToken,

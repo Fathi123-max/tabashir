@@ -4,13 +4,25 @@ import { verifyRefresh, signAccessToken } from "@/app/utils/jwt";
 export async function POST(req: Request) {
   try {
     const { refreshToken } = await req.json();
-    if (!refreshToken) return NextResponse.json({ error: "Missing token" }, { status: 400 });
+    console.log('[REFRESH] Request received, refreshToken length:', refreshToken?.length || 0);
 
-    const payload = verifyRefresh(refreshToken);
-    const accessToken = signAccessToken(payload);
+    if (!refreshToken) {
+      console.log('[REFRESH] ERROR: Missing refreshToken in request body');
+      return NextResponse.json({ error: "Missing token" }, { status: 400 });
+    }
 
-    return NextResponse.json({ accessToken });
-  } catch {
-    return NextResponse.json({ error: "Invalid refresh token" }, { status: 401 });
+    try {
+      const payload = verifyRefresh(refreshToken);
+      console.log('[REFRESH] Token verified successfully for user:', payload.email);
+      const accessToken = signAccessToken(payload);
+      console.log('[REFRESH] New access token generated successfully');
+      return NextResponse.json({ accessToken });
+    } catch (jwtError) {
+      console.log('[REFRESH] JWT verification failed:', jwtError);
+      return NextResponse.json({ error: "Invalid or expired refresh token" }, { status: 401 });
+    }
+  } catch (parseError) {
+    console.log('[REFRESH] Request parsing failed:', parseError);
+    return NextResponse.json({ error: "Invalid request format" }, { status: 400 });
   }
 }
