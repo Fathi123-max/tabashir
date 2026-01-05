@@ -26,6 +26,8 @@ export async function GET(req: Request) {
       recentJobs,
       newJobsThisWeek,
       totalActiveJobs,
+      totalApplications,
+      totalJobsWithApplications,
     ] = await Promise.all([
       prisma.job.findMany({
         where: {
@@ -49,6 +51,14 @@ export async function GET(req: Request) {
       }),
       prisma.job.count({
         where: { status: 'ACTIVE' },
+      }),
+      prisma.jobApplication.count(),
+      prisma.job.count({
+        where: {
+          applicants: {
+            some: {},
+          },
+        },
       }),
     ]);
 
@@ -185,9 +195,16 @@ export async function GET(req: Request) {
         return { industry, percentage };
       });
 
+    // Calculate average applications per job
+    const averageApplicationsPerJob = totalJobsWithApplications > 0
+      ? Math.round((totalApplications / totalJobsWithApplications) * 10) / 10
+      : 0;
+
     const jobMarketTrends = {
       totalJobs: totalActiveJobs,
       newJobsThisWeek,
+      averageApplicationsPerJob,
+      totalApplications,
       topLocations,
       salaryInsights,
     };

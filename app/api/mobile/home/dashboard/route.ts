@@ -15,7 +15,7 @@ export async function GET(req: Request) {
 
     const { id } = verifyAccess(token);
 
-    // Get user basic info
+    // Get user basic info with candidate profile
     const user = await prisma.user.findUnique({
       where: { id },
       select: {
@@ -25,6 +25,12 @@ export async function GET(req: Request) {
         image: true,
         userType: true,
         createdAt: true,
+        updatedAt: true,
+        candidate: {
+          include: {
+            profile: true,
+          },
+        },
       },
     });
 
@@ -68,7 +74,7 @@ export async function GET(req: Request) {
       where: {
         userId: id,
         status: 'INTERVIEW',
-        updatedAt: {
+        appliedAt: {
           gte: new Date(),
           lte: sevenDaysFromNow,
         },
@@ -84,7 +90,7 @@ export async function GET(req: Request) {
           },
         },
       },
-      orderBy: { updatedAt: 'asc' },
+      orderBy: { appliedAt: 'asc' },
       take: 5,
     });
 
@@ -96,7 +102,7 @@ export async function GET(req: Request) {
       where: {
         userId: id,
         status: 'OFFER',
-        updatedAt: {
+        appliedAt: {
           gte: thirtyDaysAgo,
         },
       },
@@ -114,7 +120,7 @@ export async function GET(req: Request) {
           },
         },
       },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: { appliedAt: 'desc' },
       take: 3,
     });
 
@@ -127,9 +133,50 @@ export async function GET(req: Request) {
       rejected,
     };
 
+    // Calculate Profile Completion Percentage
+    let profileCompletionPercentage = 0;
+    if (user.candidate?.profile) {
+      const profile = user.candidate.profile;
+      const requiredFields = [
+        'phone',
+        'nationality',
+        'gender',
+        'jobType',
+        'experience',
+        'education',
+        'skills',
+      ];
+      let completedFields = 0;
+
+      requiredFields.forEach(field => {
+        const value = (profile as any)[field];
+        if (value !== null && value !== undefined && value !== '') {
+          if (Array.isArray(value) && value.length > 0) {
+            completedFields++;
+          } else if (!Array.isArray(value)) {
+            completedFields++;
+          }
+        }
+      });
+
+      profileCompletionPercentage = Math.round((completedFields / requiredFields.length) * 100);
+    }
+
+    // Calculate Application Success Rate
+    const successfulApplications = interview + offer;
+    const applicationSuccessRate = totalApplications > 0
+      ? Math.round((successfulApplications / totalApplications) * 100)
+      : 0;
+
+    const metrics = {
+      profileCompletionPercentage,
+      applicationSuccessRate,
+    };
+
     return NextResponse.json({
       user,
       stats,
+      metrics,
       recentActivity,
       upcomingInterviews,
       recentOffers,
