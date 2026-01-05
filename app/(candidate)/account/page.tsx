@@ -50,8 +50,16 @@ export default function AccountPage() {
       try {
         const data = await getUserProfile()
         setUserData(data)
-        if (data?.skills) {
-          setSkills(data.skills.split(',').map((skill: string) => skill.trim()).filter(Boolean))
+        if (data?.candidate?.profile?.skills) {
+          const skillsString = Array.isArray(data.candidate.profile.skills)
+            ? data.candidate.profile.skills.join(', ')
+            : data.candidate.profile.skills
+          setSkills(
+            skillsString
+              .split(',')
+              .map((skill: string) => skill.trim())
+              .filter(Boolean),
+          )
         }
       } catch (error) {
         console.error('Error fetching user data:', error)

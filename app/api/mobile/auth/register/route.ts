@@ -22,7 +22,11 @@ export async function POST(req: Request) {
     });
 
     // Generate tokens for the newly registered user
-    const payload = { id: user.id, email: user.email, userType: user.userType ?? undefined };
+    const payload = {
+      id: user.id,
+      email: user.email ?? "",
+      userType: user.userType?.toString() ?? "",
+    };
     const accessToken = signAccessToken(payload);
     const refreshToken = signRefreshToken(payload);
 

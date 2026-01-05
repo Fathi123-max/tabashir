@@ -96,16 +96,16 @@ export async function updateUserProfile(data: {
     });
   }
 
-  return { success: true };
+  return { success: true, message: "Profile updated successfully" };
 }
 
-export async function updatePassword(password: string) {
+export async function updatePassword(password: { newPassword: string }) {
   const session = await auth();
   if (!session?.user) {
     throw new Error("Not authenticated");
   }
 
-  const hashedPassword = await bcrypt.hash(password, 12);
+  const hashedPassword = await bcrypt.hash(password.newPassword, 12);
 
   await prisma.user.update({
     where: { id: session.user.id },
@@ -114,5 +114,5 @@ export async function updatePassword(password: string) {
     },
   });
 
-  return { success: true };
+  return { success: true, message: "Password updated successfully" };
 } 

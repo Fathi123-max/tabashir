@@ -24,8 +24,12 @@ export async function POST(req: Request) {
     const ok = await compare(password, user.password);
     if (!ok) return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
 
-    const payload = { id: user.id, email: user.email, userType: user.userType ?? undefined };
-    const accessToken  = signAccessToken(payload);
+    const payload = {
+      id: user.id,
+      email: user.email,
+      userType: user.userType?.toString() ?? "",
+    };
+    const accessToken = signAccessToken(payload);
     const refreshToken = signRefreshToken(payload);
 
     console.log('[LOGIN] Generated tokens for user:', user.email);
